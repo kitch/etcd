@@ -96,25 +96,39 @@ func mustCreateConn() *clientv3.Client {
 		Endpoints:   connEndpoints,
 		DialTimeout: dialTimeout,
 	}
-	if !tls.Empty() {
-		cfgtls, err := tls.ClientConfig()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "bad tls config: %v\n", err)
-			os.Exit(1)
-		}
-		cfg.TLS = cfgtls
-	}
+	  if !tls.Empty() && len(user) == 0 {
+	    cfgtls, err := tls.ClientConfig()
+	    if err != nil {
+	      fmt.Fprintf(os.Stderr, "bad tls config: %v\n", err)
+	      os.Exit(1)
+	    }
+	    cfg.TLS = cfgtls
+	  } else if len(user) > 0 {
+            fmt.Fprintf(os.Stderr, "setting username password\n")
+	    split := strings.Split(user, ":")
+	    if len(split) != 2 {
+	      fmt.Fprintf(os.Stderr, "bad username:password parameter\n")
+	      os.Exit(1)
+	    }
+	    cfg.Username = split[0]
+	    cfg.Password = split[1]
 
-	if len(user) != 0 {
-		username, password, err := getUsernamePassword(user)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "bad user information: %s %v\n", user, err)
-			os.Exit(1)
-		}
-		cfg.Username = username
-		cfg.Password = password
+	    caPath := tls.CAFile
+	    if caPath != "" {
+              fmt.Fprintf(os.Stderr, "setting CAFile\n")
+	      caCert, err := ioutil.ReadFile(caPath)
+	      if err != nil {
+		log.Fatalf("Error occurred reading file: %s", err.Error())
+	      }
+	      caCertPool := x509.NewCertPool()
+	      caCertPool.AppendCertsFromPEM(caCert)
+	      tlsConfig := &cryptoTLS.Config{
+		RootCAs: caCertPool,
+	      }
+	      cfg.TLS = tlsConfig
+	    }
+	  }
 
-	}
 
 	client, err := clientv3.New(cfg)
 	if targetLeader && len(leaderEps) == 0 {
@@ -132,7 +146,6 @@ func mustCreateConn() *clientv3.Client {
 
 	return client
 }
-
 func mustCreateClients(totalClients, totalConns uint) []*clientv3.Client {
 	conns := make([]*clientv3.Client, totalConns)
 	for i := range conns {
